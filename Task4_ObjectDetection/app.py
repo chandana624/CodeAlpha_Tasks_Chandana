@@ -1,43 +1,35 @@
-from flask import Flask, render_template, request
-from ultralytics import YOLO
-import os
 import cv2
+from ultralytics import YOLO
 
-app = Flask(__name__)
+# Load a pretrained YOLOv8 model (downloads automatically the first time you run this)
+model = YOLO("yolov8n.pt")  # "n" = nano, the smallest/fastest version
 
-UPLOAD_FOLDER = "static/uploads"
-RESULT_FOLDER = "static/results"
+print("Starting webcam... press 'q' to quit.")
 
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(RESULT_FOLDER, exist_ok=True)
+# Open the default webcam (0). Change to 1 if you have multiple cameras.
+cap = cv2.VideoCapture(0)
 
-model = YOLO("yolo11n.pt")
+if not cap.isOpened():
+    print("Error: Could not access webcam.")
+    exit()
 
+while True:
+    success, frame = cap.read()
+    if not success:
+        print("Failed to grab frame.")
+        break
 
-@app.route("/", methods=["GET", "POST"])
-def home():
-    result_image = None
+    # Run detection + tracking on this frame using YOLO's built-in ByteTrack
+    results = model.track(frame, persist=True, verbose=False)
 
-    if request.method == "POST":
-        file = request.files.get("image")
+    # Draw bounding boxes, labels, and tracking IDs on the frame
+    annotated_frame = results[0].plot()
 
-        if file and file.filename:
-            input_path = os.path.join(UPLOAD_FOLDER, file.filename)
-            file.save(input_path)
+    cv2.imshow("Object Detection and Tracking - Press 'q' to quit", annotated_frame)
 
-            results = model.predict(source=input_path)
+    # Exit loop when 'q' is pressed
+    if cv2.waitKey(1) & 0xFF == ord("q"):
+        break
 
-            annotated_image = results[0].plot()
-
-            output_filename = "detected_" + file.filename
-            output_path = os.path.join(RESULT_FOLDER, output_filename)
-
-            cv2.imwrite(output_path, annotated_image)
-
-            result_image = f"/static/results/{output_filename}"
-
-    return render_template("index.html", result_image=result_image)
-
-
-if __name__ == "__main__":
-    app.run(debug=True)
+cap.release()
+cv2.destroyAllWindows()
